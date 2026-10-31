@@ -1,5 +1,5 @@
 // Service worker: офлайн-кеш для установленной PWA.
-const CACHE = 'sbg-v2';
+const CACHE = 'sbg-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -10,6 +10,7 @@ const ASSETS = [
   './js/game.js',
   './js/ui.js',
   './js/state.js',
+  './js/storage.js',
   './js/audio.js',
   './js/art.js',
   './js/utils.js',

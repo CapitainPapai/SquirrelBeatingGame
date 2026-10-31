@@ -1,0 +1,69 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Squirrel Beating Game",
+  "version": "1.0.0",
+  "identifier": "com.squirrelbeatinggame.app",
+  "build": {
+    "frontendDist": "../web",
+    "beforeDevCommand": "node ./scripts/prepare-web.mjs",
+    "beforeBuildCommand": "node ./scripts/prepare-web.mjs"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Squirrel Beating Game",
+        "width": 520,
+        "height": 900,
+        "minWidth": 340,
+        "minHeight": 540,
+        "resizable": true,
+        "center": true,
+        "fullscreen": false,
+        "backgroundColor": "#2f4434",
+        "dragDropEnabled": false,
+        "zoomHotkeysEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost; worker-src 'self' blob:; form-action 'none'; base-uri 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Game",
+    "shortDescription": "Лесная аркада с молотком и бурундуками",
+    "longDescription": "Бей молотком по норам, лови 30 видов бурундуков, собирай монеты и прокачивай 40 навыков. Уютный лесной визуал, живой эмбиент и 10 разных мелодий, которые синтезируются на устройстве.",
+    "copyright": "Squirrel Beating Game",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [],
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "iOS": {
+      "minimumSystemVersion": "13.0"
+    },
+    "android": {
+      "minSdkVersion": 24
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      }
+    }
+  }
+}

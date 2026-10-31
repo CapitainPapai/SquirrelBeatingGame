@@ -1,5 +1,6 @@
 // Точка входа: связываем состояние, игру, интерфейс, звук и PWA.
-import { load, save, state, applyOffline, getStats, discoveredCount, clearOfflineReport, flushSave } from './state.js';
+import { load, save, state, applyOffline, getStats, discoveredCount, clearOfflineReport, flushSave, SAVE_STORAGE_KEY } from './state.js';
+import { hydrateFromNative, isNative } from './storage.js';
 import { Game } from './game.js';
 import { ui } from './ui.js';
 import { audio } from './audio.js';
@@ -7,7 +8,21 @@ import { hammerSVG } from './art.js';
 import { SQUIRRELS } from './data/squirrels.js';
 import { formatCoins } from './utils.js';
 
+// Нативное приложение: сначала поднимаем сейв из файла приложения,
+// затем читаем его через обычный localStorage-путь (код игры не меняется).
+await hydrateFromNative(SAVE_STORAGE_KEY);
 load();
+
+window.__APP_VERSION__ = '';
+if (isNative()) {
+  document.body.classList.add('is-native');
+  try {
+    const tauriApp = window.__TAURI__ && window.__TAURI__.app;
+    if (tauriApp && typeof tauriApp.getVersion === 'function') {
+      window.__APP_VERSION__ = await tauriApp.getVersion();
+    }
+  } catch (e) { /* версия необязательна */ }
+}
 
 const game = new Game();
 const fieldEl = document.getElementById('field');
@@ -179,7 +194,8 @@ setTimeout(() => {
 }, 2000);
 
 // ─────────── PWA ───────────
-if ('serviceWorker' in navigator) {
+// Service worker нужен только в браузере; в нативной оболочке файлы уже локальные.
+if ('serviceWorker' in navigator && !isNative()) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   });

@@ -1,0 +1,24 @@
+{
+  "name": "squirrel-beating-game-tauri",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Нативная оболочка Tauri v2 для Squirrel Beating Game",
+  "type": "module",
+  "scripts": {
+    "web:prepare": "node ./scripts/prepare-web.mjs",
+    "dev": "npm run web:prepare && tauri dev",
+    "build": "npm run web:prepare && tauri build",
+    "android:init": "tauri android init",
+    "android:dev": "npm run web:prepare && tauri android dev",
+    "android:apk": "npm run web:prepare && tauri android build --apk",
+    "android:aab": "npm run web:prepare && tauri android build --aab",
+    "ios:init": "tauri ios init",
+    "ios:dev": "npm run web:prepare && tauri ios dev",
+    "ios:build": "npm run web:prepare && tauri ios build",
+    "icons": "tauri icon ./src-tauri/icons/source-icon.png",
+    "info": "tauri info"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}

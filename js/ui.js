@@ -1,7 +1,7 @@
 // Интерфейс: HUD, магазин, энциклопедия, настройки, модальные окна.
 import {
   state, getStats, levelOf, nextCost, canBuy, buy, isLocked,
-  discoveredCount, save, resetProgress,
+  discoveredCount, save, resetProgress, SAVE_STORAGE_KEY as SAVE_KEY,
 } from './state.js';
 import { SKILLS, SKILL_BY_ID, CATEGORIES, FIELD_SIZES } from './data/skills.js';
 import {
@@ -10,6 +10,7 @@ import {
 import { squirrelSVG, hammerSVG } from './art.js';
 import { audio, TRACKS } from './audio.js';
 import { formatCoins, formatPercent, formatDuration } from './utils.js';
+import { isNative, exportSave, importSave, platform } from './storage.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -581,6 +582,22 @@ class UI {
     if (cb) cb();
   }
 
+  downloadSave() {
+    const backup = exportSave(SAVE_KEY);
+    if (!backup) { this.toast('Пока нечего экспортировать', 'warn'); return; }
+    const name = `squirrel-beating-save-${new Date().toISOString().slice(0, 10)}.json`;
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+    this.toast('Сохранение сохранено в файл', 'good');
+  }
+
   toast(text, type = '') {
     const root = $('toast-root');
     const el = document.createElement('div');
@@ -644,6 +661,13 @@ class UI {
         <span class="set-val" style="min-width:auto">${stats.autoUnlocked ? 'есть' : '—'}</span>
       </div>
 
+      <h4>Сохранение</h4>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button class="btn btn-ghost" id="btn-export-save" style="flex:1">Экспорт прогресса</button>
+        <button class="btn btn-ghost" id="btn-import-save" style="flex:1">Импорт прогресса</button>
+      </div>
+      <input type="file" id="import-save-file" accept="application/json,.json" class="hidden" />
+
       <h4>Ещё</h4>
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
         <button class="btn btn-ghost btn-block" id="btn-open-help">Как играть</button>
@@ -652,7 +676,8 @@ class UI {
         <button class="btn btn-ghost btn-block" id="btn-reset" style="color:#a05c46">Сбросить прогресс</button>
       </div>
       <p style="margin-top:14px;font-size:10.5px;line-height:1.6;color:#8b8769;text-align:center">
-        SquirrelBeatingGame · уютная лесная аркада<br />Вся музыка и звуки синтезируются прямо в браузере
+        SquirrelBeatingGame · уютная лесная аркада<br />
+        ${isNative() ? `${platformName()}${appVersion() ? ' · ' + appVersion() : ''}` : 'Вся музыка и звуки синтезируются прямо в браузере'}
       </p>`;
     this.openModal({ title: 'Настройки', body });
     const bindRange = (id, key, apply) => {
@@ -685,6 +710,38 @@ class UI {
     });
     const musicBtn = $('btn-open-music');
     if (musicBtn) musicBtn.addEventListener('click', () => this.openMusic());
+    // Экспорт / импорт сохранения
+    const exportBtn = $('btn-export-save');
+    if (exportBtn) exportBtn.addEventListener('click', () => this.downloadSave());
+    const importBtn = $('btn-import-save');
+    const fileInput = $('import-save-file');
+    if (importBtn && fileInput) {
+      importBtn.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', async () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        // Блокируем автосохранение ДО записи: иначе отложенный таймер
+        // перезапишет импортированный сейв текущим состоянием из памяти.
+        window.__SAVE_LOCKED__ = true;
+        try {
+          const text = await file.text();
+          const ok = await importSave(SAVE_KEY, JSON.parse(text));
+          if (ok) {
+            this.toast('Прогресс загружен, перезапускаю…', 'good');
+            setTimeout(() => location.reload(), 700);
+          } else {
+            window.__SAVE_LOCKED__ = false;
+            this.toast('Файл не похож на сохранение', 'warn');
+          }
+        } catch (e) {
+          window.__SAVE_LOCKED__ = false;
+          this.toast('Не удалось прочитать файл', 'warn');
+        } finally {
+          fileInput.value = '';
+        }
+      });
+    }
+
     const helpBtn = $('btn-open-help');
     if (helpBtn) helpBtn.addEventListener('click', () => this.openHelp());
     $('btn-reset').addEventListener('click', () => {
@@ -785,6 +842,10 @@ class UI {
     crest.innerHTML = squirrelSVG(SQUIRREL_BY_ID.golden);
     const btn = node.querySelector('#btn-start');
     btn.textContent = hasProgress ? 'Продолжить' : 'Играть';
+    if (isNative()) {
+      const note = node.querySelector('.start-note');
+      if (note) note.textContent = `${platformName()} · работает без интернета`;
+    }
     const kicker = node.querySelector('.start-kicker');
     if (hasProgress) {
       kicker.textContent = `${formatCoins(state.coins)} монет · ${discoveredCount()}/${SQUIRRELS.length} видов`;
@@ -830,6 +891,21 @@ class UI {
       hint.textContent = 'Чем быстрее удар — тем больше бонусов';
     }, 6000);
   }
+}
+
+function platformName() {
+  const p = platform();
+  if (p === 'android') return 'Приложение для Android';
+  if (p === 'ios') return 'Приложение для iOS';
+  if (p === 'windows') return 'Приложение для Windows';
+  if (p === 'macos') return 'Приложение для macOS';
+  if (p === 'linux') return 'Приложение для Linux';
+  return 'Нативное приложение';
+}
+
+function appVersion() {
+  const v = window.__APP_VERSION__ || '';
+  return v ? `v${v}` : '';
 }
 
 export const ui = new UI();

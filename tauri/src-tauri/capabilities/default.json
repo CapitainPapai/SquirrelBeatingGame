@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Базовые разрешения окна. Игра не обращается к сети, файлам и устройствам напрямую — только к своим командам сохранения.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-title",
+    "core:app:allow-version"
+  ]
+}
