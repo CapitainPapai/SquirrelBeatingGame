@@ -5,6 +5,11 @@ name: Tauri build
 #
 # Триггеры: вручную (Actions → Run workflow) и теги вида v1.0.0
 # (к тегу дополнительно прикрепляются артефакты релиза).
+# Секреты не обязательны: без них соберутся неподписанные сборки.
+#   ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS — подпись APK
+#   APPLE_* — подпись и notarization для macOS
+# MacOS-раннеры считаются в лимит GitHub Actions с коэффициентом 10,
+# поэтому собирай вручную, когда нужно, а не на каждый пуш.
 
 on:
   workflow_dispatch:
@@ -117,7 +122,7 @@ jobs:
 
       - name: Init android project
         working-directory: tauri
-        run: npx --yes @tauri-apps/cli@^2 android init
+        run: npx --yes @tauri-apps/cli@^2 android init --ci
 
       - name: Inject signing key (если заданы секреты)
         if: env.KEYSTORE_B64 != ''
