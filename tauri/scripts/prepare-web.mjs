@@ -26,7 +26,7 @@ const COPY = [
 
 // В нативной оболочке service worker не нужен: файлы уже лежат на устройстве,
 // а старый кеш после обновления приложения только мешает.
-const SKIP_FILES = new Set(['sw.js', 'netlify-badge.js']);
+const SKIP_FILES = new Set(['sw.js']);
 
 async function exists(path) {
   try { await stat(path); return true; } catch { return false; }
@@ -74,12 +74,6 @@ async function main() {
     join(out, 'build-info.json'),
     `${JSON.stringify({ app: 'SquirrelBeatingGame', version, builtAt: new Date().toISOString(), shell: 'tauri' }, null, 2)}\n`,
   );
-
-  // В собранной веб-копии плашка Netlify не нужна совсем — убираем подключение.
-  const indexPath = join(out, 'index.html');
-  const html = await readFile(indexPath, 'utf8');
-  const cleaned = html.replace(/\s*<script src="\.\/js\/netlify-badge\.js"><\/script>\s*/, '\n');
-  if (cleaned !== html) await writeFile(indexPath, cleaned);
 
   console.log(`✔ веб-часть собрана в ${out} (версия ${version})`);
 }
