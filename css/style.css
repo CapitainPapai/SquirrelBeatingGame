@@ -1,3 +1,23 @@
+
+/* ---------- Плашка «Powered by Netlify» ----------
+   Netlify сам вставляет её на бесплатные проекты (с 19.08.2026) — в коде игры
+   её нет. На телефоне она перекрывает нижнюю панель. Официально отключается
+   бесплатно: Project configuration → General → Powered by Netlify badge → Off.
+   Ниже — страховка, если переключатель недоступен. */
+#nl-badge-frame,
+#nl-badge,
+[id^="nl-badge"],
+[class*="nl-badge"],
+iframe[src*=".netlify/scripts/hud"],
+iframe[src*="netlify-badge"],
+netlify-badge,
+[data-netlify-badge] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 /* ============================================================
    SquirrelBeatingGame — уютный лесной визуал
    ============================================================ */
