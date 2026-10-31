@@ -1,14 +1,16 @@
 // Service worker: офлайн-кеш для установленной PWA.
-const CACHE = 'sbg-v1';
+const CACHE = 'sbg-v3';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/style.css',
   './js/main.js',
+  './js/netlify-badge.js',
   './js/game.js',
   './js/ui.js',
   './js/state.js',
+  './js/storage.js',
   './js/audio.js',
   './js/art.js',
   './js/utils.js',

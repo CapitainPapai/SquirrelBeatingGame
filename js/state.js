@@ -1,8 +1,10 @@
 // Состояние игры, сохранение и логика прокачки.
 import { SKILLS, SKILL_BY_ID, skillCost, computeStats } from './data/skills.js';
 import { SQUIRREL_BY_ID } from './data/squirrels.js';
+import { mirrorToNative, clearNative } from './storage.js';
 
 const SAVE_KEY = 'sbg_save_v1';
+export const SAVE_STORAGE_KEY = SAVE_KEY;
 const MAX_OFFLINE_HOURS = 8;
 
 function defaults() {
@@ -65,26 +67,37 @@ export function load() {
 }
 
 export function save(immediate = false) {
+  // Пока идёт импорт сейва, игру нельзя перезаписывать текущим состоянием.
+  if (typeof window !== 'undefined' && window.__SAVE_LOCKED__) return;
   dirty = true;
   state.lastSeen = Date.now();
   if (immediate) {
     dirty = false;
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) { /* место кончилось */ }
+    const json = JSON.stringify(state);
+    try { localStorage.setItem(SAVE_KEY, json); } catch (e) { /* место кончилось */ }
+    mirrorToNative(json);
     return;
   }
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
+    // Импорт сейва мог начаться уже после планирования таймера.
+    if (typeof window !== 'undefined' && window.__SAVE_LOCKED__) return;
     if (!dirty) return;
     dirty = false;
     state.lastSeen = Date.now();
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) { /* noop */ }
+    const json = JSON.stringify(state);
+    try { localStorage.setItem(SAVE_KEY, json); } catch (e) { /* noop */ }
+    mirrorToNative(json);
   }, 1200);
 }
 
 export function flushSave() {
+  if (typeof window !== 'undefined' && window.__SAVE_LOCKED__) return;
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) { /* noop */ }
+  const json = JSON.stringify(state);
+  try { localStorage.setItem(SAVE_KEY, json); } catch (e) { /* noop */ }
+  mirrorToNative(json);
 }
 
 export function resetProgress() {
@@ -92,6 +105,7 @@ export function resetProgress() {
   Object.assign(state, defaults(), { settings });
   statsCache = null;
   save(true);
+  clearNative();
 }
 
 export function getStats() {

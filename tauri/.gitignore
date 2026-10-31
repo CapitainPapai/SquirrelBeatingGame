@@ -1,0 +1,14 @@
+# Собранная веб-копия (генерируется node tauri/scripts/prepare-web.mjs)
+/web
+
+# Артефакты сборки Rust / Tauri
+/src-tauri/target
+/src-tauri/gen
+/src-tauri/gen/android/.gradle
+/src-tauri/gen/android/build
+/src-tauri/gen/android/app/build
+/src-tauri/gen/apple/build
+
+node_modules
+.DS_Store
+*.log

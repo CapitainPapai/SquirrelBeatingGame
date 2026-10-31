@@ -69,6 +69,24 @@ python3 -m http.server 8080
 `netlify.toml` уже содержит нужные заголовки, а `sw.js` кеширует игру для офлайна.
 Деплой вручную через CLI: `npx netlify-cli deploy --prod --dir .`
 
+### Плашка «Powered by Netlify»
+
+Netlify с 19.08.2026 сам добавляет на бесплатные проекты плашку в правом нижнем углу —
+в коде игры её нет. На телефоне она перекрывает нижнюю панель вкладок. Убирается бесплатно:
+
+1. Открой проект на [app.netlify.com](https://app.netlify.com).
+2. **Project configuration → General → Powered by Netlify badge** → снять галочку → сохранить.
+3. Редеплой не нужен — плашка исчезает со следующего запроса.
+
+Страховка от плашки уже встроена: `js/netlify-badge.js` + правила в `css/style.css`
+удаляют её элементы (`#nl-badge-frame`, `.nl-badge*` и iframe HUD-скрипта), если переключатель
+ещё недоступен. Если плашка не нужна в проекте совсем — удали один `<script>` из `index.html`
+и блок `/* Плашка «Powered by Netlify» */` из `css/style.css`.
+
+**Если хочется хостинг без плашки вообще:** Cloudflare Pages (бесплатно, без бейджа) —
+создать проект → «Upload assets» → перетащить эту же папку. GitHub Pages потребует
+публичный репозиторий (или GitHub Pro для приватного).
+
 ## Структура
 
 ```
@@ -81,13 +99,56 @@ js/main.js                точка входа: связка состояния
 js/game.js                игровой движок: норы, спавн, удары, буффы, эффекты
 js/ui.js                  HUD, магазин, энциклопедия, модалки, настройки
 js/state.js               сохранение (localStorage), покупки, офлайн-доход
+js/storage.js             хранилище прогресса: localStorage + файл в нативном приложении
 js/audio.js               Web Audio: 10 треков, эмбиент, SFX
 js/art.js                 процедурный SVG-арт бурундуков, молотка, жёлудя, сундука
+js/netlify-badge.js       удаляет плашку «Powered by Netlify», если она появилась
 js/data/squirrels.js      30 видов: редкости, палитры, эффекты, шансы
 js/data/skills.js         40 навыков, стоимости, расчёт статов, размеры поля
 js/utils.js               форматирование чисел и времени
 icons/                    иконки PWA (png/svg)
+tauri/                    нативная сборка (Windows/macOS/Linux/Android/iOS) — не нужна для веба
 ```
+
+## Нативная версия (Tauri v2)
+
+Кроме веба игру можно собрать как обычное приложение — `.exe`/`.msi` для Windows,
+`.dmg` для macOS, `.deb`/`.AppImage` для Linux, `.apk`/`.aab` для Android и `.ipa` для iOS.
+Веб-версия при этом остаётся главной: `tauri/` — отдельная папка («ветка») проекта,
+она ничего не меняет в корне и в деплое на Netlify.
+
+```bash
+cd tauri
+npm install          # один раз
+npm run dev          # запуск приложения в режиме разработки
+npm run build        # сборка установщика для текущей ОС
+npx tauri info       # проверить, что установлены Rust и зависимости
+```
+
+Мобильные цели:
+
+```bash
+npm run android:init && npm run android:dev     # нужен Android Studio + NDK
+npm run ios:init     && npm run ios:dev         # нужен macOS + Xcode
+```
+
+Что важно знать:
+
+- **Прогресс** хранится в файле `save.json` в приватной папке приложения
+  (а не только в `localStorage`, который WebView может вычистить). Сейв из браузера
+  переносится автоматически при первом запуске, вручную — кнопками
+  «Экспорт прогресса» / «Импорт прогресса» в настройках.
+- **Сборка веб-части** автоматическая: `tauri/scripts/prepare-web.mjs` копирует
+  `index.html`, `css`, `js`, `icons` в `tauri/web` и выкидывает скрипт плашки Netlify.
+- **Иконки** всех размеров уже лежат в `tauri/src-tauri/icons/`, свои можно собрать
+  командой `npm run icons` из `src-tauri/icons/source-icon.png`.
+- **Готовый CI** — `tauri/ci/tauri-build.yml`: собирает все платформы и релиз по тегу `v*`.
+  Скопируй его в `.github/workflows/`, чтобы получить `.exe`, `.dmg`, `.deb` и `.apk` артефактами.
+- Публикация: Microsoft Store, Google Play ($25, `.aab`), App Store ($99/год, нужен Mac).
+  Подробная инструкция по зависимостям, ключам подписи и частым ошибкам — в
+  [`tauri/README.md`](tauri/README.md).
+
+Полный гайд: **[tauri/README.md](tauri/README.md)**.
 
 ## Скрипты-помощники (необязательно)
 
