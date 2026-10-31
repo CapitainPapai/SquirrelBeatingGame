@@ -142,8 +142,10 @@ npm run ios:init     && npm run ios:dev         # нужен macOS + Xcode
   `index.html`, `css`, `js`, `icons` в `tauri/web` и выкидывает скрипт плашки Netlify.
 - **Иконки** всех размеров уже лежат в `tauri/src-tauri/icons/`, свои можно собрать
   командой `npm run icons` из `src-tauri/icons/source-icon.png`.
-- **Готовый CI** — `tauri/ci/tauri-build.yml`: собирает все платформы и релиз по тегу `v*`.
-  Скопируй его в `.github/workflows/`, чтобы получить `.exe`, `.dmg`, `.deb` и `.apk` артефактами.
+- **Готовый CI уже включён** — `.github/workflows/tauri-build.yml` (копия в `tauri/ci/`):
+  GitHub → вкладка **Actions** → **Tauri build** → **Run workflow** собирает `.exe/.msi`,
+  `.dmg`, `.deb/.AppImage` и `.apk/.aab` прямо в облаке, без установки SDK на свой компьютер.
+  Тег вида `v1.0.0` дополнительно создаёт черновик релиза с этими файлами.
 - Публикация: Microsoft Store, Google Play ($25, `.aab`), App Store ($99/год, нужен Mac).
   Подробная инструкция по зависимостям, ключам подписи и частым ошибкам — в
   [`tauri/README.md`](tauri/README.md).
