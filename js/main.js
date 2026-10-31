@@ -42,6 +42,7 @@ window.addEventListener('pointermove', (e) => {
   pointerInField = !!inside;
   if (e.pointerType === 'mouse') {
     moveHammer(e.clientX, e.clientY, inside);
+    if (!inside) hammerEl.classList.remove('is-on');
   }
 }, { passive: true });
 
