@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>SquirrelBeatingGame — Лесная поляна</title>
+<meta name="description" content="Милая браузерная аркада: бей молотком по норам, лови 30 видов бурундуков, собирай монеты и прокачивай 40 навыков." />
+<meta name="theme-color" content="#2f4434" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Squirrel Beating" />
+<meta name="mobile-web-app-capable" content="yes" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="icon" href="./icons/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
+<link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+<div class="scene-bg" aria-hidden="true">
+  <div class="bg-sky"></div>
+  <div class="bg-trunks"></div>
+  <div class="bg-glow"></div>
+  <div class="bg-canopy"></div>
+  <div class="bg-vignette"></div>
+  <div class="bg-grain"></div>
+</div>
+
+<div id="app">
+  <header class="hud" id="hud">
+    <div class="hud-left">
+      <div class="coin-pill" title="Монеты">
+        <span class="coin-icon" aria-hidden="true"></span>
+        <span class="coin-value" id="hud-coins">0</span>
+      </div>
+      <div class="mult-pill" id="hud-mult" title="Текущий множитель награды">
+        <span class="mult-x">×</span><span id="hud-mult-value">1.0</span>
+        <span class="mult-sub" id="hud-mult-sub">базовый</span>
+      </div>
+    </div>
+    <div class="hud-right">
+      <div class="track-chip" id="track-chip" title="Фоновая музыка">
+        <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span id="track-name">Тишина</span>
+        <button class="track-next" id="btn-next-track" aria-label="Следующая песня" title="Следующая песня"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5.6v12.8L15.4 12z"/><rect x="16.4" y="5.6" width="2.6" height="12.8" rx="1.2"/></svg></button>
+      </div>
+      <button class="icon-btn" id="btn-settings" aria-label="Настройки звука" title="Настройки"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.1"/><path d="M19.3 14.9a1.6 1.6 0 0 0 .3 1.8l.1.1a1.9 1.9 0 1 1-2.7 2.7l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5v.2a1.9 1.9 0 1 1-3.8 0v-.1a1.6 1.6 0 0 0-1.1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a1.9 1.9 0 1 1-2.7-2.7l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a1.9 1.9 0 1 1 0-3.8h.1a1.6 1.6 0 0 0 1.5-1.1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a1.9 1.9 0 1 1 2.7-2.7l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a1.9 1.9 0 1 1 3.8 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a1.9 1.9 0 1 1 2.7 2.7l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1h.2a1.9 1.9 0 1 1 0 3.8h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg></button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ИГРА -->
+    <section class="view view-game is-active" id="view-game" aria-label="Игровое поле">
+      <div class="field-head">
+        <div class="hint" id="field-hint">Тапай по норам — оттуда выглядывают бурундуки</div>
+        <div class="buffs" id="buff-row"></div>
+      </div>
+      <div class="field-wrap">
+        <div class="field-glow"></div>
+        <div class="field-deco" aria-hidden="true">
+          <span class="firefly" style="--x:12%;--y:26%;--d:13s;--dl:0s"></span>
+          <span class="firefly" style="--x:86%;--y:18%;--d:17s;--dl:-4s"></span>
+          <span class="firefly" style="--x:74%;--y:66%;--d:15s;--dl:-8s"></span>
+          <span class="firefly" style="--x:22%;--y:78%;--d:19s;--dl:-2s"></span>
+          <span class="firefly" style="--x:50%;--y:88%;--d:21s;--dl:-6s"></span>
+          <span class="leaf-fall" style="--x:6%;--d:22s;--dl:-3s">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20C4 11 9.5 4.5 20 4.5 20 14 13.5 20 4 20Z" fill="#8fae72"/><path d="M4 20c3.5-4.5 7-7 10.5-8.2" stroke="#6d8c56" stroke-width="1.2" fill="none"/></svg>
+          </span>
+          <span class="leaf-fall" style="--x:92%;--d:26s;--dl:-13s">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20C4 11 9.5 4.5 20 4.5 20 14 13.5 20 4 20Z" fill="#c08a4e"/><path d="M4 20c3.5-4.5 7-7 10.5-8.2" stroke="#a3713a" stroke-width="1.2" fill="none"/></svg>
+          </span>
+          <span class="grass grass-l"></span>
+          <span class="grass grass-r"></span>
+        </div>
+        <div class="plank-sign" aria-hidden="true">
+          <span class="plank-post plank-post-l"></span>
+          <span class="plank-post plank-post-r"></span>
+          <span class="plank-text">Squirrel Beating Game</span>
+        </div>
+        <div class="field" id="field" role="application" aria-label="Поляна с норами"></div>
+              </div>
+      <div class="combat-bar">
+        <div class="combo-pill" id="combo-pill">
+          <span class="combo-flame" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21c3.9 0 6.8-2.9 6.8-6.7 0-3.9-2.8-5.9-3.9-8.8-1.9 1.9-2.8 3.8-2.8 4.9-.9-.9-1.8-1.9-1.8-3.9-2 2.9-5.1 4.9-5.1 7.8C5.2 18.1 8.1 21 12 21z"/></svg></span>
+          <span>Серия <b id="combo-value">0</b></span>
+          <span class="combo-mult" id="combo-mult">+0%</span>
+        </div>
+        <div class="auto-pill" id="auto-pill" title="Авто-молоток">
+          <span class="auto-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.6 4.4l5 5-2.8 2.8-5-5z"/><path d="M11.9 7.1 4.2 15v4.8h4.8L16.7 12"/></svg></span>
+          <span id="auto-label">авто: нет</span>
+          <span class="auto-bar"><i id="auto-fill"></i></span>
+        </div>
+      </div>
+      <div class="tip-line" id="tip-line">Совет: попади быстрее — получишь бонус за реакцию</div>
+    </section>
+
+    <!-- ЭНЦИКЛОПЕДИЯ -->
+    <section class="view view-book" id="view-book" aria-label="Энциклопедия бурундуков">
+      <div class="view-head">
+        <div>
+          <h2>Энциклопедия</h2>
+          <p class="sub" id="book-progress">Открыто 0 из 30 видов</p>
+        </div>
+        <div class="book-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.4c3-1.4 5.6-1.4 8 0v14c-2.4-1.4-5-1.4-8 0z"/><path d="M20 5.4c-3-1.4-5.6-1.4-8 0v14c2.4-1.4 5-1.4 8 0z"/></svg></div>
+      </div>
+      <div class="book-filters" id="book-filters"></div>
+      <div class="progress-track" aria-hidden="true"><i id="book-progress-fill"></i></div>
+      <div class="book-grid" id="book-grid"></div>
+      <div class="book-legend" id="book-legend"></div>
+    </section>
+
+    <!-- МАГАЗИН -->
+    <section class="view view-shop" id="view-shop" aria-label="Магазин прокачки">
+      <div class="view-head">
+        <div>
+          <h2>Магазин</h2>
+          <p class="sub">40 навыков · покупки сохраняются</p>
+        </div>
+        <div class="shop-coins">
+          <span class="coin-icon" aria-hidden="true"></span>
+          <span id="shop-coins">0</span>
+        </div>
+      </div>
+      <div class="shop-cats" id="shop-cats"></div>
+      <div class="shop-list" id="shop-list"></div>
+    </section>
+  </main>
+
+  <nav class="tabbar" id="tabbar" aria-label="Основная навигация">
+    <button class="tab is-active" data-view="game" aria-current="page">
+      <span class="tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2c3.4 0 6 2.4 6 5.4 0 1.5-.7 2.7-1.8 3.6 1 .7 1.6 1.8 1.6 3 0 2.4-2.2 4.2-5.8 4.2s-5.8-1.8-5.8-4.2c0-1.2.6-2.3 1.6-3C6.7 11.3 6 10.1 6 8.6c0-3 2.6-5.4 6-5.4z"/><path d="M12 19.4V22"/></svg></span><span class="tab-label">Поляна</span>
+      <span class="tab-dot" id="tab-dot-game"></span>
+    </button>
+    <button class="tab" data-view="book">
+      <span class="tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.4c3-1.4 5.6-1.4 8 0v14c-2.4-1.4-5-1.4-8 0z"/><path d="M20 5.4c-3-1.4-5.6-1.4-8 0v14c2.4-1.4 5-1.4 8 0z"/></svg></span><span class="tab-label">Энциклопедия</span>
+      <span class="tab-badge" id="tab-badge-book">0/30</span>
+    </button>
+    <button class="tab" data-view="shop">
+      <span class="tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14.6 4.4l5 5-2.8 2.8-5-5z"/><path d="M11.9 7.1 4.2 15v4.8h4.8L16.7 12"/></svg></span><span class="tab-label">Магазин</span>
+      <span class="tab-badge badge-coins" id="tab-badge-shop">0</span>
+    </button>
+  </nav>
+
+  <div class="hammer-cursor" id="hammer-cursor" aria-hidden="true"></div>
+  <div class="fx-layer" id="fx-layer" aria-hidden="true"></div>
+  <div class="modal-root" id="modal-root"></div>
+  <div class="toast-root" id="toast-root" aria-live="polite"></div>
+</div>
+
+<template id="tpl-start">
+  <div class="start-screen">
+    <div class="start-card">
+      <div class="start-crest" id="start-crest"></div>
+      <h1 class="start-title">Squirrel <span>Beating</span><br />Game</h1>
+      <p class="start-kicker">лесная аркада</p>
+      <p class="start-desc">Бей молотком по норам, лови редких бурундуков, собирай монеты и прокачивай лесную поляну.</p>
+      <button class="btn btn-primary btn-big" id="btn-start">Играть</button>
+      <div class="start-mini">
+        <span>40 навыков</span><span>·</span><span>30 видов</span><span>·</span><span>10 мелодий</span>
+      </div>
+      <p class="start-note">Работает на телефоне и компьютере · можно установить как приложение</p>
+    </div>
+  </div>
+</template>
+
+<noscript><p style="padding:2rem;color:#fff">Для игры нужен включённый JavaScript.</p></noscript>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
