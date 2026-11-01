@@ -24,6 +24,9 @@ if (isNative()) {
   } catch (e) { /* версия необязательна */ }
 }
 
+// Качество звука: null — авто (телефон = экономно), true/false — выбор игрока.
+audio.setLowPower(state.settings.audioEconomy ?? null);
+
 const game = new Game();
 const fieldEl = document.getElementById('field');
 const fxEl = document.getElementById('fx-layer');
@@ -164,6 +167,8 @@ document.addEventListener('visibilitychange', () => {
     game.start();
     ui.updateHud(true);
     audio.wake();
+    slowFrames = 0;
+    lastFrameAt = performance.now();
   }
 });
 
@@ -171,6 +176,30 @@ document.addEventListener('visibilitychange', () => {
 ['touchend', 'click'].forEach((type) => {
   window.addEventListener(type, () => audio.wake(), { passive: true });
 });
+
+// Сторож производительности: звук в WebAudio рендерится между кадрами, и если
+// главный поток «проваливается», слышны треск и разрывы. Три долгих кадра —
+// повод автоматически перейти на экономный профиль.
+let slowFrames = 0;
+let lastFrameAt = performance.now();
+let autoDegraded = false;
+const watchFrames = (t) => {
+  const gap = t - lastFrameAt;
+  lastFrameAt = t;
+  if (!document.hidden) {
+    if (gap > 420) slowFrames += 1;
+    else if (gap < 120) slowFrames = Math.max(0, slowFrames - 0.5);
+    if (slowFrames >= 3 && !autoDegraded && !audio.lowPower && state.settings.audioEconomy !== false) {
+      autoDegraded = true;
+      audio.setLowPower(true);
+      ui.toast('Включил экономный звук — устройству не хватало мощности', 'warn');
+    }
+  } else {
+    slowFrames = 0;
+  }
+  requestAnimationFrame(watchFrames);
+};
+requestAnimationFrame(watchFrames);
 
 setInterval(() => {
   state.lastRate = game.ratePerMinute() || state.lastRate;

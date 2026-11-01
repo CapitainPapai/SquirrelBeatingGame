@@ -3,13 +3,17 @@ import { getStats, invalidateStats, state, addCoins, discover, discoveredCount }
 import { rollSquirrel, RARITIES, SQUIRREL_BY_ID } from './data/squirrels.js';
 import { FIELD_SIZES } from './data/skills.js';
 import { squirrelSVG, acornSVG, chestSVG } from './art.js';
-import { audio } from './audio.js';
+import { audio, autoLowPower } from './audio.js';
 import { formatCoins } from './utils.js';
 
 const BASE_HIT = 2;
 const BASE_SPAWN = 1250;
 const BASE_STAY = 2500;
 const COMBO_TIMEOUT = 3800;
+
+// Слабые устройства: меньше DOM-узлов в эффектах — иначе главный поток
+// «проваливается» и вместе с ним трещит звук.
+const LIGHT_FX = autoLowPower();
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -790,7 +794,8 @@ export class Game {
   // ─────────── визуальные эффекты ───────────
   fxCoins(x, y, amount, crit) {
     if (!this.fxLayer) return;
-    if (this.fxLayer.childElementCount > 46) this.fxLayer.firstElementChild?.remove();
+    const fxCap = LIGHT_FX ? 22 : 46;
+    if (this.fxLayer.childElementCount > fxCap) this.fxLayer.firstElementChild?.remove();
     const el = document.createElement('div');
     el.className = `fx-coin${crit ? ' crit' : ''}`;
     el.style.left = `${x}px`;
@@ -809,7 +814,7 @@ export class Game {
     if (rar && rar.tier >= 3) ripple.style.borderColor = rar.color;
     this.fxLayer.appendChild(ripple);
     setTimeout(() => ripple.remove(), 520);
-    const n = crit ? 10 : 6;
+    const n = crit ? (LIGHT_FX ? 6 : 10) : (LIGHT_FX ? 4 : 6);
     for (let i = 0; i < n; i++) {
       const s = document.createElement('div');
       s.className = 'fx-spark';
@@ -823,7 +828,7 @@ export class Game {
       this.fxLayer.appendChild(s);
       setTimeout(() => s.remove(), 660);
     }
-    const stars = crit ? 4 : 2;
+    const stars = crit ? (LIGHT_FX ? 3 : 4) : (LIGHT_FX ? 1 : 2);
     for (let i = 0; i < stars; i++) {
       const st = document.createElement('div');
       st.className = 'fx-star';
