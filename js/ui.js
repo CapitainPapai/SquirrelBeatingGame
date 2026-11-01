@@ -859,6 +859,10 @@ class UI {
         ambient: state.settings.ambient,
       });
       audio.startMusic(Math.floor(Math.random() * TRACKS.length));
+      // В установленном приложении звук иногда просыпается только со второго тапа.
+      if (audio.ctx && audio.ctx.state !== 'running') {
+        this.toast('Тапни по экрану, чтобы включить звук', 'warn');
+      }
       this.updateTrackChip();
       setTimeout(() => { node.remove(); this.startNode = null; }, 480);
       if (this.onStart) this.onStart();

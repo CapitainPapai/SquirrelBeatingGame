@@ -3,6 +3,12 @@
    Всё синтезируется в AudioContext — без внешних файлов.
    ============================================================ */
 
+// Планировщик музыки: тик раз в TICK_MS, смотрит вперёд на LOOKAHEAD секунд.
+// Запас нужен мобильным браузерам: их таймеры «дрожат» и тротлятся в фоне.
+// Больше 1 с брать нельзя — иначе после смены мелодии старый такт ещё звучит.
+const TICK_MS = 220;
+const LOOKAHEAD = 1.0;
+
 const midiToFreq = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 const SCALES = {
@@ -281,7 +287,10 @@ class SoundEngine {
 
   async init() {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') { try { await this.ctx.resume(); } catch (e) { /* ignore */ } }
+      // iOS/Android умеют усыплять контекст ('suspended') и «прерывать» его
+      // ('interrupted' после звонка или сворачивания). Оба состояния лечатся
+      // вызовом resume() из жеста пользователя.
+      if (this.ctx.state !== 'running') await this.resume();
       return;
     }
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -301,7 +310,7 @@ class SoundEngine {
 
     // Реверб
     const verb = ctx.createConvolver();
-    verb.buffer = this._makeIR(3.0, 2.4);
+    verb.buffer = this._makeIR(2.2, 2.6);
     this.reverb = ctx.createGain();
     this.reverb.gain.value = 0.9;
     verb.connect(this.reverb).connect(this.master);
@@ -361,7 +370,66 @@ class SoundEngine {
     };
 
     this.ready = true;
+    ctx.onstatechange = () => this._onStateChange();
     this.startAmbient();
+    // Свежесозданный контекст на iOS (и в установленном приложении) часто
+    // стартует в 'suspended' — без явного resume() звука не будет вообще.
+    await this.resume();
+  }
+
+  /**
+   * Возобновляет звук. Возвращает true, если контекст действительно завёлся.
+   * Вызывать из пользовательского жеста (тап/клик) — этого требует iOS.
+   */
+  async resume() {
+    const ctx = this.ctx;
+    if (!ctx) { await this.init(); return !!(this.ctx && this.ctx.state === 'running'); }
+    if (ctx.state === 'running') return true;
+    try { await ctx.resume(); } catch (e) { /* нет жеста — попробуем на следующем тапе */ }
+    if (ctx.state === 'running') {
+      this._resyncBars();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Сворачивание/уход со страницы: мягко усыпляем контекст.
+   * Иначе Android продолжает «дорисовывать» такты из очереди, а вернувшись
+   * мы получаем пачку наложенных звуков — треск и шум.
+   */
+  sleep() {
+    if (!this.ready || !this.ctx) return;
+    if (this.ctx.state === 'running') {
+      try { this.ctx.suspend(); } catch (e) { /* noop */ }
+    }
+  }
+
+  /** Дёшево вызывается на каждый тап: будит контекст, если он уснул. */
+  wake() {
+    if (!this.ready) { this.init(); return; }
+    if (this.ctx && this.ctx.state !== 'running') this.resume();
+  }
+
+  /**
+   * Ставит сетку тактов заново. Нужна после паузы: часы контекста стоят,
+   * а планировщик успевает «накопить» недоигранные такты.
+   */
+  _resyncBars() {
+    if (!this.ctx) return;
+    this.nextBarAt = this.ctx.currentTime + 0.12;
+  }
+
+  _onStateChange() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (ctx.state === 'running') {
+      this._resyncBars();
+      if (this.ready && this.playing && this.musicOn && !this.scheduleTimer) {
+        this.scheduleTimer = setInterval(() => this._tick(), TICK_MS);
+        this._tick();
+      }
+    }
   }
 
   _makeIR(seconds, decay) {
@@ -640,8 +708,9 @@ class SoundEngine {
     this.nextBarAt = this.ctx.currentTime + 0.12;
     this._switching = false;
     this.markTrackStart();
+    if (this.ctx.state !== 'running') this.resume();
     if (!this.scheduleTimer) {
-      this.scheduleTimer = setInterval(() => this._tick(), 90);
+      this.scheduleTimer = setInterval(() => this._tick(), TICK_MS);
       this._tick();
     }
   }
@@ -720,14 +789,18 @@ class SoundEngine {
     if (!this.ready || !this.musicOn || this._switching) return;
     if (this.ctx.state !== 'running') return;
     const now = this.ctx.currentTime;
-    // не более 8 тактов вперёд, защита от фонового дрейфа
+    const barDur = this._barDuration();
+    // Таймер отстал (телефон свернули, тяжёлый кадр, троттлинг)?
+    // Не догоняем упущенные такты: они наложились бы друг на друга и
+    // дали бы тот самый треск/шум. Просто сдвигаем сетку вперёд.
+    if (this.nextBarAt < now - barDur * 0.5) this.nextBarAt = now + 0.06;
+    const horizon = now + LOOKAHEAD;
     let guard = 0;
-    while (this.nextBarAt < now + 0.55 && guard++ < 8) {
+    while (this.nextBarAt < horizon && guard++ < 4) {
       this._scheduleBar(this.bar, Math.max(this.nextBarAt, now + 0.05));
-      this.nextBarAt += this._barDuration();
+      this.nextBarAt += barDur;
       this.bar++;
     }
-    if (this.nextBarAt < now) this.nextBarAt = now + 0.1;
   }
 
   _scheduleBar(bar, t) {
@@ -963,7 +1036,7 @@ class SoundEngine {
   // ─────────── SFX ───────────
   playSfx(name, opts = {}) {
     if (!this.ready || this.volumes.sfx <= 0.001) return;
-    if (this.ctx.state !== 'running') return;
+    if (this.ctx.state !== 'running') { this.wake(); return; }
     const ctx = this.ctx;
     const t = ctx.currentTime + 0.005;
     const out = this.sfxBus;

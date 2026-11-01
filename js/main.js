@@ -61,8 +61,10 @@ window.addEventListener('pointermove', (e) => {
   }
 }, { passive: true });
 
+// iOS и Android держат AudioContext на паузе, пока нет явного жеста.
+// Будим звук на каждом тапе — иначе в установленном приложении он молчит.
 window.addEventListener('pointerdown', (e) => {
-  if (!audio.ready) audio.init();
+  audio.wake();
   const inField = e.target instanceof Element && e.target.closest('#field');
   if (inField) {
     swingHammer(e.clientX, e.clientY);
@@ -155,12 +157,19 @@ ui.onStart = () => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     game.stop();
+    audio.sleep();
     state.lastRate = game.ratePerMinute() || state.lastRate;
     flushSave();
   } else if (!ui.startNode) {
     game.start();
     ui.updateHud(true);
+    audio.wake();
   }
+});
+
+// Дублирующий «разбудитель» для WebView без pointer-событий (старые iOS).
+['touchend', 'click'].forEach((type) => {
+  window.addEventListener(type, () => audio.wake(), { passive: true });
 });
 
 setInterval(() => {
