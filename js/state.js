@@ -18,7 +18,7 @@ function defaults() {
     playTime: 0,
     levels: {},
     discovered: {},
-    settings: { music: 0.62, sfx: 0.78, ambient: 0.5 },
+    settings: { music: 0.62, sfx: 0.78, ambient: 0.5, audioEconomy: null },
     tutorialDone: false,
     createdAt: Date.now(),
     lastSeen: Date.now(),

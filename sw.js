@@ -1,5 +1,5 @@
 // Service worker: офлайн-кеш для установленной PWA.
-const CACHE = 'sbg-v5';
+const CACHE = 'sbg-v6';
 const ASSETS = [
   './',
   './index.html',

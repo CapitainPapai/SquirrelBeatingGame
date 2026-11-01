@@ -272,8 +272,10 @@ main { flex: 1 1 auto; position: relative; min-height: 0; }
   background: radial-gradient(circle, #fff6c4 0%, #ffd970 45%, rgba(255, 210, 110, 0) 72%);
   box-shadow: 0 0 12px rgba(255, 220, 120, 0.85);
   opacity: 0.5;
-  animation: firefly-float var(--d, 16s) ease-in-out infinite;
-  animation-delay: var(--dl, 0s);
+  /* Safari не умеет var() внутри шортката animation — анимация просто не
+     запускается. Длительность и задержку задаём инлайн-стилем в разметке. */
+  animation: firefly-float 16s ease-in-out infinite;
+  animation-delay: 0s;
 }
 @keyframes firefly-float {
   0%, 100% { transform: translate(0, 0) scale(0.8); opacity: 0.25; }
@@ -284,8 +286,9 @@ main { flex: 1 1 auto; position: relative; min-height: 0; }
 .leaf-fall {
   position: absolute; left: var(--x); top: -8%;
   width: 16px; height: 16px; opacity: 0.5;
-  animation: leaf-drift var(--d, 24s) linear infinite;
-  animation-delay: var(--dl, 0s);
+  /* см. комментарий у .firefly — то же ограничение Safari */
+  animation: leaf-drift 24s linear infinite;
+  animation-delay: 0s;
 }
 .leaf-fall svg { width: 100%; height: 100%; display: block; }
 @keyframes leaf-drift {
@@ -419,12 +422,24 @@ main { flex: 1 1 auto; position: relative; min-height: 0; }
 }
 .hole.is-up .sq { transform: translateY(2%); }
 .sq-svg { display: block; width: 100%; height: auto; overflow: visible; }
-.hole.is-up .art-body { animation: sq-bob 2.4s ease-in-out infinite; transform-origin: 60px 120px; }
+.hole.is-up .art-body {
+  animation: sq-bob 2.4s ease-in-out infinite;
+  /* Без transform-box Safari считает transform-origin от угла SVG,
+     и бурундук «качается» вокруг невидимой точки (или не двигается вовсе). */
+  -webkit-transform-box: fill-box;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
 @keyframes sq-bob {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50% { transform: translateY(-1.5px) rotate(-1deg); }
 }
-.hole.is-up .art-eyes { animation: sq-blink 4.2s infinite; transform-origin: 60px 46px; }
+.hole.is-up .art-eyes {
+  animation: sq-blink 4.2s infinite;
+  -webkit-transform-box: fill-box;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
 @keyframes sq-blink {
   0%, 92%, 100% { transform: scaleY(1); }
   95% { transform: scaleY(0.12); }
@@ -446,7 +461,11 @@ main { flex: 1 1 auto; position: relative; min-height: 0; }
   filter: blur(1px);
 }
 
-.hole.is-hit .sq { animation: sq-hit 0.34s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.hole.is-hit .sq {
+  /* transition на transform мешает анимации удара в Safari — на время анимации убираем */
+  transition: none;
+  animation: sq-hit 0.34s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
 @keyframes sq-hit {
   0% { transform: translateY(2%) scale(1, 1); }
   30% { transform: translateY(14%) scale(1.18, 0.72) rotate(-4deg); }
@@ -752,6 +771,8 @@ main { flex: 1 1 auto; position: relative; min-height: 0; }
 .hammer-cursor.is-on { opacity: 1; }
 .hammer-cursor .hammer-svg { width: 100%; height: 100%; overflow: visible; }
 .hammer-cursor .hammer-inner {
+  -webkit-transform-box: fill-box;
+  transform-box: fill-box;
   transform-origin: 56% 82%;
   transition: transform 0.09s cubic-bezier(0.3, 0.9, 0.4, 1);
 }
@@ -795,23 +816,25 @@ main { flex: 1 1 auto; position: relative; min-height: 0; }
 .fx-spark {
   position: absolute; width: 7px; height: 7px; border-radius: 50%;
   background: radial-gradient(circle, #fff6d0, #f0b452);
-  transform: translate(-50%, -50%);
+  /* центрируем отступом, а не translate(-50%) — тогда в keyframes остаются
+     только px-переменные, без calc() и процентов */
+  margin: -3.5px 0 0 -3.5px;
   animation: spark-fly 0.62s cubic-bezier(0.2, 0.6, 0.4, 1) forwards;
 }
 @keyframes spark-fly {
-  0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.25); }
+  0% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(var(--dx, 20px), var(--dy, -20px)) scale(0.25); }
 }
 .fx-star {
   position: absolute; width: 10px; height: 10px; background: #fff2c4;
   clip-path: polygon(50% 0%, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0% 50%, 39% 39%);
-  transform: translate(-50%, -50%);
+  margin: -5px 0 0 -5px;
   animation: star-spin 0.6s ease-out forwards;
 }
 @keyframes star-spin {
-  0% { opacity: 0; transform: translate(-50%, -50%) rotate(0) scale(0.4); }
+  0% { opacity: 0; transform: translate(0, 0) rotate(0) scale(0.4); }
   30% { opacity: 1; }
-  100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(220deg) scale(1.1); }
+  100% { opacity: 0; transform: translate(var(--dx, 26px), var(--dy, -26px)) rotate(220deg) scale(1.1); }
 }
 .fx-banner {
   position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%);

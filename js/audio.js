@@ -9,6 +9,29 @@
 const TICK_MS = 220;
 const LOOKAHEAD = 1.0;
 
+/**
+ * Слабый ли это звуковой тракт: телефон, планшет или очень скромный ноутбук.
+ * На таких устройствах конволюционный реверб и «толстые» инструменты дают
+ * треск — не хватает CPU на рендер аудио в реальном времени.
+ */
+export function autoLowPower() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const cores = navigator.hardwareConcurrency || 4;
+  const mem = navigator.deviceMemory || 4;
+  const isAndroid = /Android|HarmonyOS/i.test(ua);
+  const isIOS = /iPhone|iPad|iPod/i.test(ua)
+    || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+  // Android-устройства и WebView там пёстрые: по умолчанию экономим.
+  // iPhone 12 и новее конволюцию тянут спокойно, старые — нет.
+  if (isAndroid) return true;
+  if (isIOS) return cores <= 4 || mem <= 3;
+  if (cores <= 2 || mem <= 2) return true;
+  let coarse = false;
+  try { coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch (e) { /* noop */ }
+  return coarse && cores <= 4;
+}
+
 const midiToFreq = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 const SCALES = {
@@ -283,6 +306,11 @@ class SoundEngine {
     this._switching = false;
     this.trackStartedAt = 0;
     this.trackLength = 0;
+    this.lowPower = null;      // null = ещё не решили (см. autoLowPower)
+    this._userQuality = null;  // true/false — выбор игрока, null — авто
+    this._wetKind = 'none';
+    this.wetIn = null;
+    this._sfxAt = {};          // время последнего проигрывания каждого эффекта
   }
 
   async init() {
@@ -295,25 +323,42 @@ class SoundEngine {
     }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
-    const ctx = new AC();
+    if (this.lowPower === null) this.lowPower = autoLowPower();
+    const light = this.lowPower;
+
+    // latencyHint: 'playback' просит у системы большой выходной буфер.
+    // Именно маленький буфер — главная причина «трещит на телефоне»:
+    // рендер не успевает, и в потоке появляются дырки. Для музыки задержка
+    // в десятки миллисекунд не важна, а стабильность — важна.
+    let ctx;
+    try {
+      ctx = new AC({ latencyHint: light ? 'playback' : 'balanced' });
+    } catch (e) {
+      try { ctx = new AC({ latencyHint: 'playback' }); } catch (e2) { ctx = new AC(); }
+    }
     this.ctx = ctx;
 
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -16;
-    comp.knee.value = 22;
-    comp.ratio.value = 3.2;
-    comp.attack.value = 0.008;
-    comp.release.value = 0.22;
+    // На слабых устройствах лимитер злее: он ловит пики, которые иначе
+    // уходят в клиппинг и слышны как хрип.
+    comp.threshold.value = light ? -12 : -16;
+    comp.knee.value = light ? 8 : 22;
+    comp.ratio.value = light ? 6 : 3.2;
+    comp.attack.value = 0.004;
+    comp.release.value = light ? 0.3 : 0.22;
     this.master = ctx.createGain();
-    this.master.gain.value = 0.9;
+    this.master.gain.value = light ? 0.72 : 0.9;
     this.master.connect(comp).connect(ctx.destination);
 
-    // Реверб
-    const verb = ctx.createConvolver();
-    verb.buffer = this._makeIR(2.2, 2.6);
+    // Реверб: всё «мокрое» стекается в wetIn, а дальше — либо честная
+    // конволюция, либо дешёвая гребёночная схема (телефоны).
     this.reverb = ctx.createGain();
     this.reverb.gain.value = 0.9;
-    verb.connect(this.reverb).connect(this.master);
+    this.reverb.connect(this.master);
+    this.wetIn = ctx.createGain();
+    this.wetIn.gain.value = 1;
+    if (light) this._buildCheapReverb();
+    else this._buildConvolverReverb();
 
     // Дилэй
     const delay = ctx.createDelay(1.2);
@@ -336,13 +381,15 @@ class SoundEngine {
     this.sfxBus.connect(this.master);
     this.sfxVerb = ctx.createGain();
     this.sfxVerb.gain.value = 0.22;
-    this.sfxBus.connect(this.sfxVerb).connect(verb);
+    this.sfxBus.connect(this.sfxVerb).connect(this.wetIn);
 
     this.ambBus = ctx.createGain();
     this.ambBus.gain.value = this.volumes.ambient;
     this.ambBus.connect(this.master);
 
-    this.noiseBuffer = this._makeNoise(3);
+    // Шум для ветра и «дыхания» инструментов: на телефоне короче и в моно —
+    // вдвое меньше работы при старте и вдвое меньше памяти.
+    this.noiseBuffer = this._makeNoise(light ? 1.6 : 3, light);
 
     // Каналы для слоёв музыки
     const mk = (gain, wet, dly) => {
@@ -352,7 +399,7 @@ class SoundEngine {
       if (wet > 0) {
         const w = ctx.createGain();
         w.gain.value = wet;
-        g.connect(w).connect(verb);
+        g.connect(w).connect(this.wetIn);
       }
       if (dly > 0) {
         const d = ctx.createGain();
@@ -432,6 +479,65 @@ class SoundEngine {
     }
   }
 
+  _buildConvolverReverb() {
+    const ctx = this.ctx;
+    const verb = ctx.createConvolver();
+    verb.buffer = this._makeIR(2.2, 2.6);
+    this.wetIn.connect(verb).connect(this.reverb);
+    this._wetKind = 'convolver';
+  }
+
+  /**
+   * Дешёвый «лесной» реверб: четыре короткие гребёнки с демпфированием.
+   * Стоит на порядок меньше конволюции, для уютного фона этого хватает.
+   */
+  _buildCheapReverb() {
+    const ctx = this.ctx;
+    const times = [0.0297, 0.0371, 0.0411, 0.0437];
+    const sum = ctx.createGain();
+    sum.gain.value = 0.34;
+    sum.connect(this.reverb);
+    times.forEach((d, i) => {
+      const delay = ctx.createDelay(0.2);
+      delay.delayTime.value = d * (i % 2 ? 1.08 : 1);
+      const damp = ctx.createBiquadFilter();
+      damp.type = 'lowpass';
+      damp.frequency.value = 2400 + i * 300;
+      const fb = ctx.createGain();
+      fb.gain.value = 0.58;
+      const tap = ctx.createGain();
+      tap.gain.value = 0.85;
+      this.wetIn.connect(delay);
+      delay.connect(damp);
+      damp.connect(fb).connect(delay);
+      delay.connect(tap).connect(sum);
+    });
+    this._wetKind = 'cheap';
+  }
+
+  /**
+   * Ручное переключение качества звука (из настроек).
+   * value: true — экономить, false — максимум качества, null — авто.
+   */
+  setLowPower(value) {
+    this._userQuality = value === null || value === undefined ? null : !!value;
+    const next = this._userQuality === null ? autoLowPower() : this._userQuality;
+    if (next === this.lowPower) return this.lowPower;
+    this.lowPower = next;
+    if (!this.ready || !this.wetIn) return this.lowPower;
+    this._rebuildWet();
+    this.master.gain.setTargetAtTime(this.lowPower ? 0.72 : 0.9, this.ctx.currentTime, 0.12);
+    return this.lowPower;
+  }
+
+  _rebuildWet() {
+    if (!this.wetIn) return;
+    try { this.wetIn.disconnect(); } catch (e) { /* noop */ }
+    // Сразу освобождаем вход — иначе старые узлы остаются висеть в графе.
+    if (this.lowPower) this._buildCheapReverb();
+    else this._buildConvolverReverb();
+  }
+
   _makeIR(seconds, decay) {
     const ctx = this.ctx;
     const rate = ctx.sampleRate;
@@ -451,11 +557,12 @@ class SoundEngine {
     return buf;
   }
 
-  _makeNoise(seconds) {
+  _makeNoise(seconds, mono = false) {
     const ctx = this.ctx;
     const len = Math.floor(ctx.sampleRate * seconds);
-    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
-    for (let ch = 0; ch < 2; ch++) {
+    const chans = mono ? 1 : 2;
+    const buf = ctx.createBuffer(chans, len, ctx.sampleRate);
+    for (let ch = 0; ch < chans; ch++) {
       const d = buf.getChannelData(ch);
       let b0 = 0, b1 = 0, b2 = 0;
       for (let i = 0; i < len; i++) {
@@ -518,11 +625,13 @@ class SoundEngine {
         const a = this._osc('sine', freq, t, dur + 0.6);
         const b = this._osc('sine', freq * 3.01, t, dur + 0.3);
         const bg = ctx.createGain(); bg.gain.value = 0.12;
-        const c = this._osc('sine', freq * 6.2, t, 0.25);
-        const cg = ctx.createGain(); cg.gain.value = 0.05;
         a.connect(g);
         b.connect(bg).connect(g);
-        c.connect(cg).connect(g);
+        if (!this.lowPower) {
+          const c = this._osc('sine', freq * 6.2, t, 0.25);
+          const cg = ctx.createGain(); cg.gain.value = 0.05;
+          c.connect(cg).connect(g);
+        }
         break;
       }
       case 'marimba': {
@@ -531,10 +640,12 @@ class SoundEngine {
         this._osc('sine', freq, t, dur + 0.5).connect(g);
         const h = ctx.createGain(); h.gain.value = 0.22;
         this._osc('sine', freq * 4.0, t, 0.28).connect(h).connect(g);
-        const n = this._noiseHit(t, 0.05);
-        const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq * 3; f.Q.value = 2;
-        const ng = ctx.createGain(); ng.gain.value = 0.04 * v;
-        n.connect(f).connect(ng).connect(g);
+        if (!this.lowPower) {
+          const n = this._noiseHit(t, 0.05);
+          const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq * 3; f.Q.value = 2;
+          const ng = ctx.createGain(); ng.gain.value = 0.04 * v;
+          n.connect(f).connect(ng).connect(g);
+        }
         break;
       }
       case 'musicBox': {
@@ -543,8 +654,10 @@ class SoundEngine {
         this._osc('sine', freq, t, dur + 1.2).connect(g);
         const h = ctx.createGain(); h.gain.value = 0.15;
         this._osc('sine', freq * 2.0, t, 0.7).connect(h).connect(g);
-        const h2 = ctx.createGain(); h2.gain.value = 0.05;
-        this._osc('sine', freq * 5.4, t, 0.35).connect(h2).connect(g);
+        if (!this.lowPower) {
+          const h2 = ctx.createGain(); h2.gain.value = 0.05;
+          this._osc('sine', freq * 5.4, t, 0.35).connect(h2).connect(g);
+        }
         break;
       }
       case 'bell': {
@@ -568,11 +681,15 @@ class SoundEngine {
         mg.gain.setValueAtTime(freq * 1.1, t);
         mg.gain.exponentialRampToValueAtTime(freq * 0.02, t + 1.2);
         mod.connect(mg).connect(car.frequency);
-        const trem = ctx.createGain(); trem.gain.value = 1;
-        const lfo = this._osc('sine', 4.5, t, dur + 1.2);
-        const lg = ctx.createGain(); lg.gain.value = 0.16 * v;
-        lfo.connect(lg).connect(trem.gain);
-        car.connect(trem).connect(g);
+        if (this.lowPower) {
+          car.connect(g);
+        } else {
+          const trem = ctx.createGain(); trem.gain.value = 1;
+          const lfo = this._osc('sine', 4.5, t, dur + 1.2);
+          const lg = ctx.createGain(); lg.gain.value = 0.16 * v;
+          lfo.connect(lg).connect(trem.gain);
+          car.connect(trem).connect(g);
+        }
         break;
       }
       case 'flute': {
@@ -589,33 +706,40 @@ class SoundEngine {
         o.connect(g);
         o2.connect(o2g).connect(g);
         // дыхание
-        const n = this._noiseHit(t, dur + 0.4);
-        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
-        bp.frequency.value = freq * 2; bp.Q.value = 1.1;
-        const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.0001, t);
-        ng.gain.linearRampToValueAtTime(0.05 * v * ((this.track && this.track.lead && this.track.lead.breath) || 0.6), t + 0.08);
-        ng.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.3);
-        n.connect(bp).connect(ng).connect(out);
+        if (!this.lowPower) {
+          const n = this._noiseHit(t, dur + 0.4);
+          const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+          bp.frequency.value = freq * 2; bp.Q.value = 1.1;
+          const ng = ctx.createGain();
+          ng.gain.setValueAtTime(0.0001, t);
+          ng.gain.linearRampToValueAtTime(0.05 * v * ((this.track && this.track.lead && this.track.lead.breath) || 0.6), t + 0.08);
+          ng.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.3);
+          n.connect(bp).connect(ng).connect(out);
+        }
         break;
       }
       case 'pluck':
       case 'guitar': {
         const g = this._env(t, v * 0.4, 0.005, name === 'guitar' ? 1.3 : 0.8, 0.0001);
         g.connect(out);
-        const o = this._osc('sawtooth', freq, t, dur + 1.0, -4);
-        const o2 = this._osc('sawtooth', freq, t, dur + 1.0, 5);
         const f = ctx.createBiquadFilter();
         f.type = 'lowpass'; f.Q.value = 1.2;
         f.frequency.setValueAtTime(Math.min(5200, freq * 9), t);
         f.frequency.exponentialRampToValueAtTime(Math.max(300, freq * 1.6), t + 0.35);
         const mix = ctx.createGain(); mix.gain.value = 0.5;
-        o.connect(f); o2.connect(f);
+        const o = this._osc('sawtooth', freq, t, dur + 1.0, -4);
+        o.connect(f);
+        if (!this.lowPower) {
+          const o2 = this._osc('sawtooth', freq, t, dur + 1.0, 5);
+          o2.connect(f);
+        }
         f.connect(mix).connect(g);
-        const n = this._noiseHit(t, 0.06);
-        const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 2400; nf.Q.value = 1.4;
-        const ng = ctx.createGain(); ng.gain.value = 0.09 * v;
-        n.connect(nf).connect(ng).connect(g);
+        if (!this.lowPower) {
+          const n = this._noiseHit(t, 0.06);
+          const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 2400; nf.Q.value = 1.4;
+          const ng = ctx.createGain(); ng.gain.value = 0.09 * v;
+          n.connect(nf).connect(ng).connect(g);
+        }
         break;
       }
       case 'warmPad':
@@ -635,25 +759,27 @@ class SoundEngine {
         const f = ctx.createBiquadFilter();
         f.type = 'lowpass'; f.frequency.value = cfg[0]; f.Q.value = 0.6;
         f.connect(g);
-        const detunes = name === 'glassPad' ? [-9, 0, 8] : [-6, 0, 7];
+        const detunes = this.lowPower ? [-5, 6] : (name === 'glassPad' ? [-9, 0, 8] : [-6, 0, 7]);
         detunes.forEach((d) => {
           const o = this._osc(name === 'airyPad' ? 'triangle' : 'sawtooth', freq, t, dur + rel + 0.2, d);
           const og = ctx.createGain(); og.gain.value = cfg[1];
           o.connect(og).connect(f);
         });
-        if (name === 'glassPad' || name === 'airyPad') {
+        if (!this.lowPower && (name === 'glassPad' || name === 'airyPad')) {
           const o2 = this._osc('sine', freq * 2, t, dur + rel + 0.2, 2);
           const g2 = ctx.createGain(); g2.gain.value = 0.12;
           o2.connect(g2).connect(f);
         }
-        // мягкое дыхание
-        const n = this._noiseHit(t, dur + rel + 0.2);
-        const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 1000; nf.Q.value = 0.6;
-        const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.0001, t);
-        ng.gain.linearRampToValueAtTime(0.012 * v, t + atk + 0.3);
-        ng.gain.exponentialRampToValueAtTime(0.0001, t + dur + rel);
-        n.connect(nf).connect(ng).connect(out);
+        // мягкое дыхание (на телефоне пропускаем — это чистый шум)
+        if (!this.lowPower) {
+          const n = this._noiseHit(t, dur + rel + 0.2);
+          const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 1000; nf.Q.value = 0.6;
+          const ng = ctx.createGain();
+          ng.gain.setValueAtTime(0.0001, t);
+          ng.gain.linearRampToValueAtTime(0.012 * v, t + atk + 0.3);
+          ng.gain.exponentialRampToValueAtTime(0.0001, t + dur + rel);
+          n.connect(nf).connect(ng).connect(out);
+        }
         break;
       }
       case 'softBass':
@@ -662,13 +788,16 @@ class SoundEngine {
       case 'fingerBass': {
         const g = this._env(t, v * 0.55, name === 'fingerBass' ? 0.008 : 0.02, 0.55, 0.0001);
         g.connect(out);
-        const o = this._osc(name === 'fingerBass' ? 'triangle' : 'sine', freq, t, dur + 0.7);
-        const o2 = this._osc('sine', freq * 2, t, dur + 0.5);
-        const g2 = ctx.createGain(); g2.gain.value = name === 'roundBass' ? 0.3 : 0.12;
         const f = ctx.createBiquadFilter(); f.type = 'lowpass';
         f.frequency.setValueAtTime(name === 'deepBass' ? 220 : 520, t);
         f.frequency.exponentialRampToValueAtTime(120, t + 0.6);
-        o.connect(f); o2.connect(g2).connect(f);
+        const o = this._osc(name === 'fingerBass' ? 'triangle' : 'sine', freq, t, dur + 0.7);
+        o.connect(f);
+        if (!this.lowPower) {
+          const o2 = this._osc('sine', freq * 2, t, dur + 0.5);
+          const g2 = ctx.createGain(); g2.gain.value = name === 'roundBass' ? 0.3 : 0.12;
+          o2.connect(g2).connect(f);
+        }
         f.connect(g);
         break;
       }
@@ -794,7 +923,7 @@ class SoundEngine {
     // Не догоняем упущенные такты: они наложились бы друг на друга и
     // дали бы тот самый треск/шум. Просто сдвигаем сетку вперёд.
     if (this.nextBarAt < now - barDur * 0.5) this.nextBarAt = now + 0.06;
-    const horizon = now + LOOKAHEAD;
+    const horizon = now + (this.lowPower ? LOOKAHEAD * 1.6 : LOOKAHEAD);
     let guard = 0;
     while (this.nextBarAt < horizon && guard++ < 4) {
       this._scheduleBar(this.bar, Math.max(this.nextBarAt, now + 0.05));
@@ -834,7 +963,7 @@ class SoundEngine {
     if (L.pad) {
       this._padAtk = L.pad.attack;
       this._padRel = L.pad.release;
-      const notes = [chordNotes[0] - 12, ...chordNotes].slice(0, 5);
+      const notes = [chordNotes[0] - 12, ...chordNotes].slice(0, this.lowPower ? 3 : 5);
       notes.forEach((m, i) => {
         this._inst(L.pad.inst, midiToFreq(m + L.pad.oct * 12), t + i * 0.012, barDur * 0.92, L.pad.gain * (i === 0 ? 1 : 0.8), this.channels.pad);
       });
@@ -854,8 +983,8 @@ class SoundEngine {
       const a = L.arp;
       const every = a.every || 1;
       if (bar % every === 0) {
-        const count = Math.ceil(tr.beatsPerBar / a.rate);
-        for (let i = 0; i < count; i++) {
+        const count = Math.ceil(tr.beatsPerBar / a.rate) * (this.lowPower ? 0.6 : 1);
+        for (let i = 0; i < Math.ceil(count); i++) {
           const step = i % a.pattern.length;
           const rawTone = a.pattern[step];
           const toneIdx = rawTone % chordNotes.length;
@@ -941,7 +1070,7 @@ class SoundEngine {
       else if (r < 0.75) this._rustle();
       else if (r < 0.86) this._cricket();
       else if (r < 0.94) this._woodCreak();
-    }, 2300);
+    }, this.lowPower ? 4200 : 2300);
   }
 
   _ambDest() {
@@ -1037,6 +1166,13 @@ class SoundEngine {
   playSfx(name, opts = {}) {
     if (!this.ready || this.volumes.sfx <= 0.001) return;
     if (this.ctx.state !== 'running') { this.wake(); return; }
+    // На слабом устройстве не наслаиваем одинаковые эффекты чаще 40 мс:
+    // авто-молоток и серии иначе забивают поток и дают хрип.
+    if (this.lowPower) {
+      const nowMs = Date.now();
+      if (nowMs - (this._sfxAt[name] || 0) < 40) return;
+      this._sfxAt[name] = nowMs;
+    }
     const ctx = this.ctx;
     const t = ctx.currentTime + 0.005;
     const out = this.sfxBus;

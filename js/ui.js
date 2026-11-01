@@ -8,7 +8,7 @@ import {
   SQUIRRELS, SQUIRREL_BY_ID, RARITIES, chanceOfSpecies,
 } from './data/squirrels.js';
 import { squirrelSVG, hammerSVG } from './art.js';
-import { audio, TRACKS } from './audio.js';
+import { audio, TRACKS, autoLowPower } from './audio.js';
 import { formatCoins, formatPercent, formatDuration } from './utils.js';
 import { isNative, exportSave, importSave, platform } from './storage.js';
 
@@ -638,6 +638,10 @@ class UI {
         <div class="set-label">Вибрация<small>на телефоне при ударе</small></div>
         <input type="checkbox" id="set-haptics" ${s.haptics === false ? '' : 'checked'} style="width:38px;height:22px;accent-color:#6f9360" />
       </div>
+      <div class="set-row">
+        <div class="set-label">Экономный звук<small>включи, если музыка трещит</small></div>
+        <input type="checkbox" id="set-economy" ${(s.audioEconomy === null || s.audioEconomy === undefined ? autoLowPower() : !!s.audioEconomy) ? 'checked' : ''} style="width:38px;height:22px;accent-color:#6f9360" />
+      </div>
 
       <h4>Прогресс</h4>
       <div class="set-row">
@@ -700,6 +704,13 @@ class UI {
     bindRange('vol-ambient', 'ambient', (v) => audio.setVolumes({ ambient: v }));
     const h = $('set-haptics');
     if (h) h.addEventListener('change', () => { state.settings.haptics = h.checked; save(); });
+    const eco = $('set-economy');
+    if (eco) eco.addEventListener('change', () => {
+      state.settings.audioEconomy = eco.checked;
+      save();
+      audio.setLowPower(eco.checked);
+      this.toast(eco.checked ? 'Экономный звук: тише, но без треска' : 'Звук в полном качестве', 'good');
+    });
     const installBtn = $('btn-install');
     if (installBtn) installBtn.addEventListener('click', async () => {
       if (!this.deferredPrompt) return;
